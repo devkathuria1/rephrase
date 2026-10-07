@@ -5,9 +5,11 @@ import os
 import pandas as pd
 import streamlit as st
 
-from src import classifier, ocr, pipeline, severity, ui_helpers
+from src import classifier, ocr, pipeline, severity, styles, ui_helpers
 
-st.set_page_config(page_title="Rephrase", page_icon="💬", layout="wide")
+st.set_page_config(page_title="Rephrase", page_icon="💬", layout="centered")
+
+PASTE, SCREENSHOT = "Paste text", "Upload screenshot"
 
 
 def _load_streamlit_secrets() -> None:
@@ -37,37 +39,56 @@ def _init_env() -> bool:
 def sidebar() -> bool:
     """Render the sidebar and return whether the secondary classifier is on."""
     with st.sidebar:
-        st.header("Settings")
+        st.header("⚙️ Settings")
         use_secondary = st.toggle(
             "Secondary hate-speech classifier",
             value=True,
             help="Adds facebook/roberta-hate-speech-dynabench-r4-target.",
         )
-        st.caption(ui_helpers.SECONDARY_NOTE)
         provider, enabled, reason = ui_helpers.provider_status()
-        if enabled:
-            st.success(f"LLM provider: {provider} (rephrasing enabled)")
-        else:
-            st.warning(f"LLM provider: {provider} (rephrasing disabled: {reason})")
-        st.caption("Accuracy drops for non-English text; the models are English-only.")
-        st.divider()
-        st.subheader("Please read")
-        st.info(
-            "Rephrase is an **assistive aid, not a moderator**. The models have "
-            "known biases and make mistakes, so human judgment is required.\n\n"
-            "This app stores and logs no user text. If rephrasing is enabled, "
-            "your text is sent to a third-party LLM provider, whose own privacy "
-            "policy applies."
+        st.markdown(
+            "LLM provider " + ui_helpers.provider_pill_html(provider, enabled),
+            unsafe_allow_html=True,
         )
+        if not enabled:
+            st.caption(f"Rephrasing disabled: {reason}")
+        with st.expander("About the classifiers"):
+            st.caption(ui_helpers.SECONDARY_NOTE)
+            st.caption("The models are English-only; accuracy drops for other languages.")
+        with st.expander("ℹ️ About"):
+            st.caption(
+                "Rephrase checks text for toxicity, shows which words drove the result, "
+                "and suggests a respectful rewording. Built for an AI & Society course."
+            )
+        with st.expander("🔒 Ethics & privacy", expanded=True):
+            st.caption(
+                "Rephrase is an **assistive aid, not a moderator**. The models have "
+                "known biases and make mistakes, so human judgment is required."
+            )
+            st.caption(
+                "This app stores and logs no user text. If rephrasing is enabled, "
+                "your text is sent to a third-party LLM provider, whose own privacy "
+                "policy applies."
+            )
     return use_secondary
+
+
+def _use_example(text: str) -> None:
+    """Button callback: switch to the paste view and fill the text box."""
+    st.session_state["input_mode"] = PASTE
+    st.session_state["pasted_text"] = text
 
 
 def input_section() -> tuple[str, str]:
     """Collect text (pasted, or OCR'd and editable) and optional context."""
-    mode = st.radio("Input", ["Paste text", "Upload screenshot"], horizontal=True)
-    if mode == "Paste text":
-        text = st.text_area("Text to check", height=150, key="pasted_text")
-    else:
+    options = [PASTE, SCREENSHOT]
+    if hasattr(st, "segmented_control"):
+        mode = st.segmented_control(
+            "Input", options, default=PASTE, key="input_mode", label_visibility="collapsed"
+        )
+    else:  # older Streamlit
+        mode = st.radio("Input", options, horizontal=True, key="input_mode")
+    if mode == SCREENSHOT:
         upload = st.file_uploader("Screenshot (PNG or JPG)", type=["png", "jpg", "jpeg"])
         if upload is None:
             st.session_state.pop("ocr_file_id", None)
@@ -83,87 +104,139 @@ def input_section() -> tuple[str, str]:
             text = st.text_area(
                 "Extracted text (edit if the OCR made mistakes)", height=150, key="ocr_text"
             )
+    else:
+        st.caption("Try an example")
+        cols = st.columns(len(ui_helpers.EXAMPLES))
+        for col, (label, example) in zip(cols, ui_helpers.EXAMPLES):
+            col.button(
+                label,
+                key=f"ex_{label}",
+                on_click=_use_example,
+                args=(example,),
+                use_container_width=True,
+            )
+        text = st.text_area("Text to check", height=150, key="pasted_text")
     context = st.text_input(
         "Context (optional)", placeholder='e.g. "this was a joke between friends"'
     )
     return text, context
 
 
-def render_result(result: dict) -> None:
-    """Render the analysis result in two columns."""
-    for warning in result["warnings"]:
-        st.warning(warning)
-    tier = result["severity"]
-    left, right = st.columns(2)
+def render_warnings(warnings: list[str]) -> None:
+    """Compact, grouped warnings: real problems first, then expected notices."""
+    groups = ui_helpers.classify_warnings(warnings)
+    for message in groups["warning"]:
+        st.warning(message, icon="⚠️")
+    for message in groups["info"]:
+        st.info(message, icon="ℹ️")
 
-    with left:
-        st.markdown(ui_helpers.badge_html(tier), unsafe_allow_html=True)
-        if not result["text"]:
-            return
-        if tier == severity.NONE:
-            st.success("Nothing was flagged.")
-            st.caption(
-                "This is not a guarantee that the text is harmless: the models miss "
-                "sarcasm, implicit hate and context. See the Limitations page."
-            )
-        st.markdown("**Text with word-level highlights**")
+
+def _result_tab(result: dict) -> None:
+    tier = result["severity"]
+    st.markdown(ui_helpers.severity_card_html(tier), unsafe_allow_html=True)
+    if result["scores"]:
+        st.markdown("##### Label scores")
+        st.markdown(ui_helpers.score_bars_html(result["scores"]), unsafe_allow_html=True)
+    llm_out = result["llm"]
+    if tier == severity.NONE:
+        st.success("Nothing was flagged.", icon="✅")
+        st.caption(
+            "This is not a guarantee that the text is harmless: the models miss "
+            "sarcasm, implicit hate and context. See the Limitations page."
+        )
+    elif llm_out:
+        st.markdown("##### Before / after")
         st.markdown(
-            f'<div style="line-height:2;">{ui_helpers.highlight_html(result["text"], result["word_importance"])}</div>',
+            ui_helpers.compare_cards_html(
+                result["text"], llm_out["rephrased"], llm_out["explanation"]
+            ),
             unsafe_allow_html=True,
         )
-        if result["word_importance"]:
-            st.caption(
-                "Shading shows how much the "
-                f'"{result["word_importance"]["label"]}" score drops when a word is '
-                "removed, relative to the strongest word in this text. Faint or no "
-                "shading means no single word dominates."
+        left, right = st.columns(2)
+        if llm_out["rephrased"]:
+            left.markdown(
+                ui_helpers.text_card_html("Why this may be harmful", llm_out["explanation"], "💡"),
+                unsafe_allow_html=True,
             )
-        with st.expander("Raw scores"):
-            table = pd.DataFrame(result["scores"], index=["probability"]).T
-            st.dataframe(table)
-            if result["secondary_hate"] is not None:
-                st.write(f"Secondary classifier, hate probability: {result['secondary_hate']:.4f}")
+        else:
+            left.markdown(
+                ui_helpers.text_card_html(
+                    "Why no rephrasing", ui_helpers.NO_REPHRASING_REASON, "💡"
+                ),
+                unsafe_allow_html=True,
+            )
+        right.markdown(
+            ui_helpers.text_card_html("What you seem to mean", llm_out["intent_note"], "🧭"),
+            unsafe_allow_html=True,
+        )
+        if llm_out["confidence_caveat"]:
+            st.caption(f"Caveat: {llm_out['confidence_caveat']}")
+        st.caption(
+            "AI-generated suggestions can soften wording while keeping a hurtful "
+            "claim, or change your meaning. Check before using."
+        )
+    else:
+        st.info("No rephrasing is available for this text (see the notes above).", icon="ℹ️")
 
-    with right:
-        llm_out = result["llm"]
-        if llm_out:
-            st.markdown("**Before / after**")
-            if llm_out["rephrased"]:
-                before, after = st.columns(2)
-                before.markdown("*Original*")
-                before.write(result["text"])
-                after.markdown("*Rephrased*")
-                after.success(llm_out["rephrased"])
-                st.markdown("**Why this may be harmful**")
-                st.write(llm_out["explanation"])
-            else:
-                st.markdown("*Original*")
-                st.write(result["text"])
-                st.warning(ui_helpers.no_rephrasing_card(llm_out["explanation"]))
-            st.markdown("**What you seem to mean**")
-            st.write(llm_out["intent_note"])
-            if llm_out["confidence_caveat"]:
-                st.markdown("**Caveat**")
-                st.write(llm_out["confidence_caveat"])
-            st.caption(
-                "AI-generated suggestions can soften wording while keeping a hurtful "
-                "claim, or change your meaning. Check before using."
+
+def _highlights_tab(result: dict) -> None:
+    st.markdown(ui_helpers.legend_html(), unsafe_allow_html=True)
+    st.markdown(
+        '<div class="rp-card rp-text">'
+        f'{ui_helpers.highlight_html(result["text"], result["word_importance"])}</div>',
+        unsafe_allow_html=True,
+    )
+    if result["word_importance"]:
+        st.caption(
+            "Shading shows how much the "
+            f'"{result["word_importance"]["label"]}" score drops when a word is '
+            "removed, relative to the strongest word in this text. Faint or no "
+            "shading means no single word dominates."
+        )
+    else:
+        st.caption("No word-level explanation: nothing was flagged.")
+
+
+def _raw_scores_tab(result: dict) -> None:
+    primary, secondary = st.columns(2)
+    with primary:
+        st.markdown("**Primary: toxic-bert**")
+        st.dataframe(
+            pd.DataFrame(result["scores"], index=["probability"]).T, use_container_width=True
+        )
+    with secondary:
+        st.markdown("**Secondary: hate-speech model**")
+        if result["secondary_hate"] is None:
+            st.caption("Not run (turned off in the sidebar).")
+        else:
+            st.dataframe(
+                pd.DataFrame({"probability": {"hate": result["secondary_hate"]}}),
+                use_container_width=True,
             )
-        elif tier != severity.NONE:
-            st.info("No rephrasing is available for this text (see the warnings above).")
+
+
+def render_result(result: dict) -> None:
+    """Render the analysis result in Result / Highlights / Raw scores tabs."""
+    render_warnings(result["warnings"])
+    if not result["text"]:
+        return
+    result_tab, highlights_tab, raw_tab = st.tabs(["Result", "Highlights", "Raw scores"])
+    with result_tab:
+        _result_tab(result)
+    with highlights_tab:
+        _highlights_tab(result)
+    with raw_tab:
+        _raw_scores_tab(result)
 
 
 def main() -> None:
     _init_env()
-    st.title("Rephrase")
-    st.write(
-        "Check text or a screenshot for toxicity, see why it was flagged, "
-        "and get a respectful way to say the same thing."
-    )
+    styles.inject()
+    st.markdown(ui_helpers.hero_html(), unsafe_allow_html=True)
     use_secondary = sidebar()
     load_models(use_secondary)
     text, context = input_section()
-    if st.button("Analyze", type="primary"):
+    if st.button("Analyze", type="primary", use_container_width=True):
         if not text.strip():
             st.session_state.pop("result", None)
             st.error("Please enter some text (or upload a screenshot that contains text).")
@@ -174,6 +247,7 @@ def main() -> None:
                 )
     if "result" in st.session_state:
         render_result(st.session_state["result"])
+    st.markdown(ui_helpers.footer_html(), unsafe_allow_html=True)
 
 
 main()

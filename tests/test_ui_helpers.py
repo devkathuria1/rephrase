@@ -109,3 +109,94 @@ def test_no_rephrasing_card_includes_explanation():
 def test_secondary_note_states_benefit_and_caveat():
     note = ui_helpers.SECONDARY_NOTE
     assert "0.08" in note and "0.61" in note and "inflated" in note and "training" in note
+
+
+def test_highlight_underlines_only_strong_words():
+    words = {"words": [{"word": "a", "importance": 0.1}, {"word": "b", "importance": 0.4}]}
+    out = ui_helpers.highlight_html("a b", words)
+    assert out.count("text-decoration:underline") == 1  # b is strong, a is faint (0.19)
+
+
+def test_severity_card_has_icon_text_and_meaning_for_every_tier():
+    for tier in (severity.NONE, severity.MILD, severity.HARASSMENT, severity.HATE):
+        card = ui_helpers.severity_card_html(tier)
+        assert ui_helpers.TIER_ICONS[tier] in card
+        assert ui_helpers.TIER_COLORS[tier] in card
+        assert ui_helpers.TIER_MEANINGS[tier] in card
+    assert "&lt;b&gt;" in ui_helpers.severity_card_html("<b>")
+
+
+def test_score_bars_clamp_and_escape():
+    out = ui_helpers.score_bars_html({"<x>": 1.7, "toxic": -0.2, "insult": 0.5})
+    assert "&lt;x&gt;" in out and "<x>" not in out
+    assert "width:100.0%" in out and "width:0.0%" in out and "50%" in out
+    assert out.count("rp-hot") == 2  # 1.7 and 0.5 reach the hot threshold
+
+
+def test_compare_cards_with_rephrasing():
+    out = ui_helpers.compare_cards_html("<i>bad</i>", "kind <b>words</b>")
+    assert "Original" in out and "Rephrased" in out
+    assert "<i>" not in out and "&lt;i&gt;bad" in out and "&lt;b&gt;words" in out
+    assert "rp-none" not in out
+
+
+def test_compare_cards_without_rephrasing_is_distinct_and_never_blank():
+    out = ui_helpers.compare_cards_html("original", "", "Because <script>")
+    assert ui_helpers.NO_SAFE_REPHRASING in out and "rp-none" in out
+    assert "Because &lt;script&gt;" in out and "<script>" not in out
+    assert "rp-good" not in out
+
+
+def test_text_card_and_pills_escape():
+    assert "&lt;b&gt;" in ui_helpers.text_card_html("t", "<b>x</b>")
+    assert "&lt;t&gt;" in ui_helpers.text_card_html("<t>", "x")
+    assert "&lt;p&gt;" in ui_helpers.pill_html("<p>", True)
+    assert "rp-on" in ui_helpers.provider_pill_html("groq", True)
+    assert "off" in ui_helpers.provider_pill_html("groq", False)
+
+
+def test_classify_warnings_groups():
+    groups = ui_helpers.classify_warnings(
+        ["Rephrasing disabled: no key", "Input truncated to 5 characters."]
+    )
+    assert groups == {
+        "warning": ["Input truncated to 5 characters."],
+        "info": ["Rephrasing disabled: no key"],
+    }
+    assert ui_helpers.classify_warnings([]) == {"warning": [], "info": []}
+
+
+def test_example_card_escapes_and_marks_correctness():
+    row = {"id": 3, "category": "<c>", "text": "<script>", "expected": "should flag",
+           "tier": severity.HATE, "top_scores": "toxic 0.90"}
+    good, bad = ui_helpers.example_card_html(row, True), ui_helpers.example_card_html(row, False)
+    assert "Correct" in good and "rp-ok" in good and "Wrong" not in good
+    assert "Wrong" in bad and "rp-bad" in bad
+    assert "<script>" not in good and "&lt;script&gt;" in good and "&lt;c&gt;" in good
+
+
+def test_hero_footer_and_legend():
+    hero = ui_helpers.hero_html()
+    for name, _ in ui_helpers.STEPS:
+        assert name in hero
+    assert "Rephrase" in hero and hero.count("rp-step-num") == 4
+    footer = ui_helpers.footer_html()
+    assert "not a moderator" in footer and "No text is stored" in footer
+    assert "underlined" in ui_helpers.legend_html()
+
+
+def test_builders_have_no_blank_lines():
+    # Blank lines would make Markdown render the HTML as a code block.
+    for out in (
+        ui_helpers.hero_html(),
+        ui_helpers.compare_cards_html("a", "", "e"),
+        ui_helpers.score_bars_html({"a": 0.2}),
+        ui_helpers.legend_html(),
+    ):
+        assert "\n" not in out
+
+
+def test_try_examples_are_four_short_and_nonempty():
+    assert len(ui_helpers.EXAMPLES) == 4
+    for label, text in ui_helpers.EXAMPLES:
+        assert label and 0 < len(text) < 100

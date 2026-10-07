@@ -2,9 +2,9 @@
 
 import streamlit as st
 
-from src import classifier, severity, ui_helpers
+from src import classifier, severity, styles, ui_helpers
 
-st.set_page_config(page_title="Where this model fails", page_icon="⚠️", layout="wide")
+st.set_page_config(page_title="Where this model fails", page_icon="⚠️", layout="centered")
 
 
 @st.cache_data(show_spinner="Running the classifiers on each example...")
@@ -29,10 +29,12 @@ def evaluate_examples() -> list[dict]:
     return rows
 
 
-st.title("Where this model fails")
-st.caption(
+styles.inject()
+st.title("⚠️ Where this model fails")
+st.info(
     "Content note: these examples mention insults, identity terms and hate speech "
-    "in mild, non-graphic form. Slurs are replaced by placeholders such as [slur]."
+    "in mild, non-graphic form. Slurs are replaced by placeholders such as [slur].",
+    icon="📝",
 )
 st.write(
     "A **false positive** is harmless text that gets flagged; a **false negative** is "
@@ -41,7 +43,7 @@ st.write(
     "abuse through. Lowering the threshold trades one for the other; it cannot "
     "remove both."
 )
-st.info(
+st.caption(
     "These 8 sentences are hand-picked illustrations, **not statistics**. Some are "
     "handled correctly, and that is shown too. A larger, systematic evaluation on "
     "HateCheck (Röttger et al., 2021) comes later. Tiers below use toxic-bert plus "
@@ -50,23 +52,13 @@ st.info(
 
 rows = evaluate_examples()
 wrong = sum(not r["correct"] for r in rows)
-st.write(f"**In this run the system was wrong on {wrong} of {len(rows)} examples.**")
+st.markdown(f"##### In this run the system was wrong on {wrong} of {len(rows)} examples.")
 
 for row in rows:
     with st.container(border=True):
-        st.subheader(f"{row['id']}. {row['category']}")
-        st.markdown(f"> {row['text']}")
-        cols = st.columns([1, 1, 1, 1])
-        cols[0].markdown("**Tier**")
-        cols[0].markdown(ui_helpers.badge_html(row["tier"]), unsafe_allow_html=True)
-        cols[1].markdown("**Top scores**")
-        cols[1].write(row["top_scores"])
-        cols[2].markdown("**Expected**")
-        cols[2].write(row["expected"])
-        cols[3].markdown("**Result**")
-        if row["correct"]:
-            cols[3].success("✅ correct")
-        else:
-            cols[3].error("❌ wrong")
-        st.markdown(f"**Why it can fail.** {row['why_it_fails']}")
-        st.markdown(f"**Who is harmed.** {row['who_is_harmed']}")
+        st.markdown(ui_helpers.example_card_html(row, row["correct"]), unsafe_allow_html=True)
+        with st.expander("Why it can fail, and who is harmed"):
+            st.markdown(f"**Why it can fail.** {row['why_it_fails']}")
+            st.markdown(f"**Who is harmed.** {row['who_is_harmed']}")
+
+st.markdown(ui_helpers.footer_html(), unsafe_allow_html=True)

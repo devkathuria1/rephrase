@@ -303,10 +303,11 @@ def test_app_shows_no_safe_rephrasing_card(monkeypatch):
     at = AppTest.from_file(str(__import__("pathlib").Path(config.__file__).parent / "app.py"),
                            default_timeout=120).run()
     at.text_area[0].set_value("some hateful text")
-    at.button[0].click().run()
+    at.button[-1].click().run()
     assert not at.exception
-    cards = [w.value for w in at.warning if "No safe rephrasing available" in w.value]
+    cards = [m.value for m in at.markdown if "No safe rephrasing available" in m.value]
     assert cards and "Targets a group." in cards[0]  # the explanation is inside the card
+    assert "rp-none" in cards[0]
 
 
 def test_secondary_toggle_on_by_default_and_passed_to_pipeline(monkeypatch):
@@ -326,5 +327,5 @@ def test_secondary_toggle_on_by_default_and_passed_to_pipeline(monkeypatch):
     assert at.sidebar.toggle[0].value is True
     assert any("inflated" in c.value for c in at.sidebar.caption)
     at.text_area[0].set_value("hello")
-    at.button[0].click().run()
+    at.button[-1].click().run()
     assert seen["use_secondary"] is True
