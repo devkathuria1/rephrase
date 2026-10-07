@@ -9,14 +9,34 @@ load_dotenv()
 # --- Models ---------------------------------------------------------------
 PRIMARY_MODEL = "unitary/toxic-bert"
 SECONDARY_MODEL = "facebook/roberta-hate-speech-dynabench-r4-target"
-DEFAULT_LLM_MODEL = "claude-sonnet-5-5"
 LLM_MAX_TOKENS = 1024
 LLM_TIMEOUT_SECONDS = 30.0
 
+# --- LLM provider ----------------------------------------------------------
+PROVIDERS = ("groq", "ollama", "anthropic", "none")
+DEFAULT_PROVIDER = "groq"  # free tier, so the project works without paid APIs
+DEFAULT_MODELS = {
+    "groq": "openai/gpt-oss-120b",
+    "ollama": "llama3.1",
+    "anthropic": "claude-sonnet-5-5",
+}
+GROQ_URL = "https://api.groq.com/openai/v1/chat/completions"
+DEFAULT_OLLAMA_URL = "http://localhost:11434"
 
-def llm_model() -> str:
-    """Return the LLM model name from LLM_MODEL, or the default."""
-    return os.environ.get("LLM_MODEL") or DEFAULT_LLM_MODEL
+
+def llm_provider() -> str:
+    """Return the provider from LLM_PROVIDER (lower-cased), or the default."""
+    return (os.environ.get("LLM_PROVIDER") or DEFAULT_PROVIDER).strip().lower()
+
+
+def llm_model(provider: str) -> str:
+    """Return the model from LLM_MODEL, or the provider's default."""
+    return os.environ.get("LLM_MODEL") or DEFAULT_MODELS[provider]
+
+
+def ollama_url() -> str:
+    """Return the Ollama base URL from OLLAMA_URL, or the local default."""
+    return (os.environ.get("OLLAMA_URL") or DEFAULT_OLLAMA_URL).rstrip("/")
 
 
 # --- Severity thresholds (probabilities from toxic-bert's sigmoid heads) ---

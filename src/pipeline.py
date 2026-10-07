@@ -45,7 +45,8 @@ def analyze(
     Returns:
         A dict with ``text``, ``severity``, ``triggered``, ``scores``,
         ``secondary_hate``, ``word_importance``, ``llm_called``,
-        ``rephrasing_enabled``, ``llm`` (LLM fields, or None) and ``warnings``.
+        ``rephrasing_enabled`` (False if the provider is off or failed),
+        ``llm`` (LLM fields, or None) and ``warnings``.
         Nothing is stored; all data lives only in the returned dict.
     """
     warnings: list[str] = []
@@ -95,7 +96,7 @@ def analyze(
 
     result["word_importance"] = explain.explain(combined, scores, sev.triggered[0])
     if not result["rephrasing_enabled"]:
-        warnings.append("Rephrasing disabled: ANTHROPIC_API_KEY is not set.")
+        warnings.append(f"Rephrasing disabled: {llm.disabled_reason()}")
         return result
 
     ranked = sorted(
@@ -107,5 +108,6 @@ def analyze(
     if reply["ok"]:
         result["llm"] = {k: reply[k] for k in llm.KEYS}
     else:
+        result["rephrasing_enabled"] = False
         warnings.append(reply["error"])
     return result
