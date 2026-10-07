@@ -13,6 +13,7 @@ import re
 import requests
 
 import config
+from src import severity
 from prompts import SYSTEM_PROMPT, build_user_message
 
 KEYS = ("explanation", "rephrased", "intent_note", "confidence_caveat")
@@ -63,8 +64,8 @@ def parse_response(raw: str) -> dict[str, str]:
     for key in KEYS:
         if not isinstance(data.get(key), str):
             raise ValueError(f"missing or non-string key: {key}")
-    if not data["rephrased"].strip():
-        raise ValueError("empty rephrasing")
+    if not data["explanation"].strip():
+        raise ValueError("empty explanation")  # an empty rephrasing must be explained
     return {key: data[key].strip() for key in KEYS}
 
 
@@ -158,7 +159,9 @@ def rephrase(
     """Ask the configured provider to explain and rephrase the text in one call.
 
     Returns:
-        ``{"ok": True, **fields}`` on success, otherwise
+        ``{"ok": True, **fields}`` on success (``rephrased`` is "" when the text
+        demeans a group and no safe rephrasing exists; always "" for the Hate
+        speech tier), otherwise
         ``{"ok": False, "error": str}``. Never raises on provider or parse errors.
     """
     reason = disabled_reason()
@@ -167,7 +170,12 @@ def rephrase(
     provider = config.llm_provider()
     user = build_user_message(text, context, tier, scores, top_words)
     try:
-        return {"ok": True, **parse_response(_PROVIDER_CALLS[provider](SYSTEM_PROMPT, user))}
+        fields = parse_response(_PROVIDER_CALLS[provider](SYSTEM_PROMPT, user))
+        if tier == severity.HATE:
+            # Enforced in code, not just the prompt: a polite version of a
+            # hateful claim still carries the claim.
+            fields["rephrased"] = ""
+        return {"ok": True, **fields}
     except ProviderError as exc:
         return {"ok": False, "error": f"Rephrasing disabled: {provider} failed: {exc}"}
     except ValueError as exc:

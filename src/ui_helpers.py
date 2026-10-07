@@ -26,6 +26,24 @@ MAX_HIGHLIGHT_ALPHA = 0.75
 _HIGHLIGHT_RGB = "255, 99, 71"
 
 
+SECONDARY_NOTE = (
+    "On HateCheck, this model alone wrongly flagged far fewer harmless cases "
+    "(false positive rate 0.08 vs 0.61 for toxic-bert). Caveat: its score may be "
+    "inflated if HateCheck-like data was in its training. Here it adds to "
+    "toxic-bert's flags (it can raise a text to Hate speech but never lowers a "
+    "tier), and toxic-bert still provides the per-label breakdown."
+)
+NO_SAFE_REPHRASING ="No safe rephrasing available"
+
+
+def no_rephrasing_card(explanation: str) -> str:
+    """Markdown for the card shown when the model declines to rephrase."""
+    return (
+        f"**{NO_SAFE_REPHRASING}.** The statement targets a group, and any polite "
+        f"version would keep the harmful claim.\n\n{explanation}"
+    )
+
+
 def badge_html(tier: str) -> str:
     """Return a coloured pill for a severity tier."""
     color = TIER_COLORS.get(tier, "#777777")

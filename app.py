@@ -40,8 +40,10 @@ def sidebar() -> bool:
         st.header("Settings")
         use_secondary = st.toggle(
             "Secondary hate-speech classifier",
+            value=True,
             help="Adds facebook/roberta-hate-speech-dynabench-r4-target.",
         )
+        st.caption(ui_helpers.SECONDARY_NOTE)
         provider, enabled, reason = ui_helpers.provider_status()
         if enabled:
             st.success(f"LLM provider: {provider} (rephrasing enabled)")
@@ -126,13 +128,18 @@ def render_result(result: dict) -> None:
         llm_out = result["llm"]
         if llm_out:
             st.markdown("**Before / after**")
-            before, after = st.columns(2)
-            before.markdown("*Original*")
-            before.write(result["text"])
-            after.markdown("*Rephrased*")
-            after.success(llm_out["rephrased"])
-            st.markdown("**Why this may be harmful**")
-            st.write(llm_out["explanation"])
+            if llm_out["rephrased"]:
+                before, after = st.columns(2)
+                before.markdown("*Original*")
+                before.write(result["text"])
+                after.markdown("*Rephrased*")
+                after.success(llm_out["rephrased"])
+                st.markdown("**Why this may be harmful**")
+                st.write(llm_out["explanation"])
+            else:
+                st.markdown("*Original*")
+                st.write(result["text"])
+                st.warning(ui_helpers.no_rephrasing_card(llm_out["explanation"]))
             st.markdown("**What you seem to mean**")
             st.write(llm_out["intent_note"])
             if llm_out["confidence_caveat"]:

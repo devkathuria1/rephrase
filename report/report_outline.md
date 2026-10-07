@@ -18,6 +18,7 @@
 ### 2.3 Classifiers
 - `unitary/toxic-bert`: six sigmoid labels (toxic, severe_toxic, obscene, threat, insult, identity_hate), trained on Jigsaw data.
 - Optional `facebook/roberta-hate-speech-dynabench-r4-target`: binary hate vs not-hate, trained on adversarially collected data (Vidgen et al., 2021).
+- **Default configuration:** after the HateCheck evaluation the app enables the secondary classifier by default (toxic-bert FPR 0.61 vs secondary 0.08 on HateCheck). Caveats: the secondary score may be inflated by overlap between its training data and HateCheck-like cases (unchecked); the two are combined by union (secondary can only raise a text to Hate speech), so toxic-bert's false positives are not removed; toxic-bert is kept for the per-label breakdown that drives the Harassment and Mildly offensive tiers and the word highlights.
 ### 2.4 Severity tiers
 - Hate speech (identity_hate or severe_toxic high, or secondary hate), Harassment (threat or insult high), Mildly offensive (toxic or obscene moderate), None.
 - See section 3 for rationale.
@@ -76,7 +77,9 @@
 - **Softening without fixing:** in testing, "Gay people are disgusting and should not be allowed near children." became "I believe gay people should not be allowed near children." The insult went; the discriminatory claim stayed, and the intent note restated it as the author's "view". Preserving intent is the wrong goal when the intent is exclusion.
 - **Laundering:** a polite rewrite can make a harmful claim look acceptable.
 - **Hallucination and prompt injection:** the model may invent context; user text is fenced as data, but this is mitigation, not a guarantee.
-- Mitigations: caveat text in the UI, instruct the model on uncertainty; proposed improvement: decline to rephrase when the claim itself is demeaning.
+- **Mitigation implemented:** for the Hate speech tier (enforced in code) and for group-demeaning claims (prompt rule) the model returns an empty rephrasing, and the UI shows "No safe rephrasing available" with an explanation. After the change the same sentence is declined. Residual risk: the model decides case (b) for lower tiers, and person-directed insults earlier carried softened hurtful claims (e.g. "nobody likes you" -> "you are not being appreciated"); a further prompt rule (keep the feeling, drop the claim; neutral boundary when there is no legitimate point) fixed the tested example, but human review remains necessary.
+- Other mitigations: caveat text in the UI, instruct the model on uncertainty.
+- Trade-off: a secondary-model-only Hate tier on a plain insult (seen with code-switched text) also gets no rephrasing.
 
 ## 9. Occlusion explainability: limitations
 - Saturated scores: when a label is near 1.0 ("worthless idiot" gives insult 0.95), removing one word barely changes it, so importances are small and the highlight is faint ("idiot" about 0.09).
@@ -94,11 +97,23 @@
 - Rephrasing quality not evaluated; need human ratings.
 - Future: HateCheck evaluation, threshold calibration, multilingual models, refuse-to-rephrase policy, user study.
 
-## 12. Evaluation results (placeholder)
-- HateCheck (Röttger et al., 2021): 29 functional tests; report accuracy per functionality for toxic-bert and the secondary model.
-- Table: functionality | n | toxic-bert accuracy | secondary accuracy. *(to be filled)*
-- Table: false-positive rate on identity-mention and counter-speech tests. *(to be filled)*
-- Threshold sensitivity plot. *(to be filled)*
+## 12. Results (HateCheck)
+
+Source files are produced by `python -m evaluation.*` (see README); numbers below are placeholders to fill from them.
+
+- Overall metrics, per model: `results/hatecheck_metrics.json`. Table: model | accuracy | precision | recall | F1 | FPR | FNR. *(to be filled)*
+- Per functionality (29 functionalities): `results/hatecheck_by_functionality.csv`; chart `results/error_by_functionality.png`. *(to be filled)*
+- Confusion matrix: `results/confusion_matrix.png`. *(to be filled)*
+- Flag rate and false positive rate per target group: `results/flag_rate_by_target.png`, `hatecheck_metrics.json` (`flag_rate_by_target`). *(to be filled)*
+- Threshold sensitivity (mild threshold 0.25 / 0.4 / 0.55): `results/threshold_sensitivity.csv`. *(to be filled)*
+- Worst functionalities with masked examples: `results/worst_cases.md` (quote only masked text in the report).
+- Secondary classifier results are reported separately from toxic-bert, never mixed. These are the models evaluated *alone*; the app's combined (union) behaviour with the secondary on has not been evaluated separately. *(optional: add a "combined" row)*
+
+### Paragraph template for reporting numbers honestly
+
+> We evaluated the pretrained models `unitary/toxic-bert` and (separately) `facebook/roberta-hate-speech-dynabench-r4-target` on HateCheck (Rottger et al., 2021), a suite of **N** test cases (**N_h** hateful, **N_nh** non-hateful) across 29 functionalities. We did not train or fine-tune anything, and no LLM was involved. Our system outputs one of four severity tiers; for this evaluation we mapped it to a **binary** label (any tier above "None" counts as hateful), so these numbers do not measure whether the *tier* is right. With the untuned default thresholds (mild toxic = 0.4), toxic-bert reached accuracy **X**, with a false positive rate of **Y** and a false negative rate of **Z**; the secondary classifier reached **...**. Moving the mild threshold to 0.25 / 0.55 changed the false positive rate to **...** / **...** and the false negative rate to **...** / **...**. HateCheck is a *diagnostic* suite of synthetic, template-based cases; it does not estimate performance on real social media text, and these results apply only to these pretrained models and thresholds. Per-functionality results are more informative than the overall score, and some functionalities contain few cases (smallest n = **...**). The secondary model may have seen similar data in training; we have not checked for overlap.
+
+Reporting checklist: state the test set size and class balance; say binary mapping vs 4 tiers; say untuned thresholds; give FPR and FNR, not just accuracy; say who bears each error type (section 5); mask slurs when quoting examples; cite Rottger et al. (2021).
 
 ## 13. Conclusion
 - What works (explanations and rephrasing for blatant cases), what does not (implicit hate, context, group-targeted claims), and why human judgment stays essential.

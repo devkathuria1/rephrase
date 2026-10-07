@@ -50,6 +50,14 @@ model was probably retired; list current ones with
 Pages: the main app, and "Limitations" (`pages/1_Limitations.py`), which runs 8
 illustrative failure cases live through the classifiers (no LLM call).
 
+The secondary hate-speech classifier is **on by default in the app's sidebar**: on
+HateCheck it wrongly flagged far fewer harmless cases than toxic-bert (false positive
+rate 0.08 vs 0.61; see the evaluation section), but that score may be inflated if
+HateCheck-like data was in its training. In the app it *adds* to toxic-bert's flags (it
+can raise a text to "Hate speech" but never lowers a tier), and toxic-bert still
+provides the per-label breakdown (insult, threat, ...). `pipeline.analyze` itself still
+defaults to `use_secondary=False`; the app passes the toggle's value.
+
 Use the pipeline directly:
 
 ```python
@@ -100,6 +108,7 @@ src/llm.py                  Provider-pluggable LLM call, JSON validation, fallba
 src/pipeline.py             analyze(): the public entry point
 src/ui_helpers.py           HTML highlighting, badges, example loading (no Streamlit)
 data/failure_examples.json  The 8 illustrative failure cases
+evaluation/                 HateCheck evaluation: run_hatecheck, metrics, plots, examples
 report/                     report_outline.md, demo_script.md
 tests/                      pytest suite
 ```
@@ -113,13 +122,53 @@ third-party LLM provider, whose own retention and privacy policy applies. Nothin
 sent if nothing is flagged or the provider is `none`; Ollama keeps text on your machine.
 Screenshots may contain other people's messages, so use them with care.
 
-## HateCheck evaluation (placeholder)
+## Evaluation on HateCheck
 
-A systematic evaluation on HateCheck (Röttger et al., 2021) is planned. Results to add:
+No training, no LLM calls: the pretrained classifiers are run over the public HateCheck
+test suite (Rottger et al., 2021). **If you use these results, cite: Paul Rottger,
+Bertie Vidgen, Dong Nguyen, Zeerak Waseem, Helen Margetts and Janet Pierrehumbert (2021),
+"HateCheck: Functional Tests for Hate Speech Detection Models", ACL 2021.**
 
-| Functionality group | n | toxic-bert accuracy | secondary accuracy |
-|---|---|---|---|
-| *(to be filled)* | | | |
+**1. Download the data** (not committed; `data/` is git-ignored except the failure examples):
+
+```
+curl -L -o data/hatecheck.csv https://raw.githubusercontent.com/paul-rottger/hatecheck-data/main/test_suite_cases.csv
+```
+
+Expected columns include `test_case`, `label_gold`, `functionality`, `target_ident`
+(column names are detected automatically). If the file is missing the script prints
+these instructions and stops.
+
+**2. Run** (from the project root, in order):
+
+```
+.\.venv\Scripts\python.exe -m evaluation.run_hatecheck --secondary
+.\.venv\Scripts\python.exe -m evaluation.metrics
+.\.venv\Scripts\python.exe -m evaluation.plots
+.\.venv\Scripts\python.exe -m evaluation.examples
+```
+
+`--limit N` evaluates a reproducible random sample of N rows for a quick test;
+`--secondary` also runs the secondary classifier, which is always reported separately
+from toxic-bert. Full run: about 3 minutes on a laptop CPU for both models (3,728 cases),
+plus the one-time model download.
+
+**Mapping:** a case is predicted hateful if the severity tier is anything above "None"
+(binary mapping of the 4 tiers). The secondary model alone is predicted hateful at
+probability >= 0.5. Positive class = hateful.
+
+**Outputs** (all in `results/`, git-ignored):
+
+| File | Meaning |
+|---|---|
+| `hatecheck_predictions.csv` | One row per case: text, gold label, functionality, target group, all six toxic-bert scores, tier, prediction (and secondary score and prediction). Contains the raw, unmasked test sentences. |
+| `hatecheck_metrics.json` | Per model: accuracy, precision, recall, F1, FPR, FNR, confusion counts, and flag rate / FPR / FNR per target group; plus the thresholds used. |
+| `hatecheck_by_functionality.csv` | The same per HateCheck functionality (worst first). Each functionality has one gold class, so FPR (non-hateful) or FNR (hateful) is the relevant error. |
+| `threshold_sensitivity.csv` | toxic-bert metrics with the mild threshold at 0.25, 0.4 (current) and 0.55: the false positive / false negative trade-off. |
+| `error_by_functionality.png`, `confusion_matrix.png`, `flag_rate_by_target.png` | Charts (secondary model: same names with `_secondary`). |
+| `worst_cases.md` | The 10 worst functionalities with 3 example errors each, with slurs and explicit words masked as [slur] / [explicit], behind a content warning. |
+
+Raw explicit text appears only in the predictions CSV. Do not publish that file.
 
 ## Known limitations
 

@@ -99,3 +99,13 @@ def test_provider_status_never_exposes_key(monkeypatch):
     monkeypatch.delenv("GROQ_API_KEY")
     provider, enabled, reason = ui_helpers.provider_status()
     assert not enabled and "GROQ_API_KEY" in reason and "super-secret" not in reason
+
+
+def test_no_rephrasing_card_includes_explanation():
+    card = ui_helpers.no_rephrasing_card("Targets a group.")
+    assert ui_helpers.NO_SAFE_REPHRASING in card and "Targets a group." in card
+
+
+def test_secondary_note_states_benefit_and_caveat():
+    note = ui_helpers.SECONDARY_NOTE
+    assert "0.08" in note and "0.61" in note and "inflated" in note and "training" in note

@@ -60,7 +60,7 @@ def test_parse_valid_and_fenced_json():
 
 @pytest.mark.parametrize(
     "raw",
-    ["not json", "{broken", "[1, 2]", '{"explanation": "e"}', GOOD_JSON.replace('"r"', '""')],
+    ["not json", "{broken", "[1, 2]", '{"explanation": "e"}', GOOD_JSON.replace('"e"', '""')],
 )
 def test_parse_invalid_json_raises(raw):
     with pytest.raises(ValueError):
@@ -253,3 +253,78 @@ def test_none_and_unknown_provider_are_disabled(monkeypatch):
 
 def test_default_models():
     assert config.DEFAULT_MODELS["groq"] == "openai/gpt-oss-120b"
+
+
+EMPTY_REPHRASE_JSON = (
+    '{"explanation": "Targets a group.", "rephrased": "", "intent_note": "i", "confidence_caveat": ""}'
+)
+
+
+def test_empty_rephrased_is_valid_when_explained():
+    assert llm.parse_response(EMPTY_REPHRASE_JSON)["rephrased"] == ""
+
+
+def test_hate_tier_forces_empty_rephrasing(monkeypatch):
+    enable_llm(monkeypatch, "groq")
+    monkeypatch.setitem(llm._PROVIDER_CALLS, "groq", lambda s, u: GOOD_JSON)
+    reply = llm.rephrase("x", "", severity.HATE, {"identity_hate": 0.9}, [])
+    assert reply["ok"] and reply["rephrased"] == "" and reply["explanation"] == "e"
+    reply = llm.rephrase("x", "", severity.HARASSMENT, {"insult": 0.9}, [])
+    assert reply["rephrased"] == "r"
+
+
+def test_non_hate_tier_keeps_model_empty_rephrasing(monkeypatch):
+    enable_llm(monkeypatch, "groq")
+    monkeypatch.setitem(llm._PROVIDER_CALLS, "groq", lambda s, u: EMPTY_REPHRASE_JSON)
+    reply = llm.rephrase("x", "", severity.HARASSMENT, {"insult": 0.9}, [])
+    assert reply["ok"] and reply["rephrased"] == ""
+
+
+def test_prompt_covers_group_claims_and_person_insults():
+    from prompts import SYSTEM_PROMPT
+
+    assert 'Set "rephrased" to an empty string' in SYSTEM_PROMPT
+    assert "Hate speech" in SYSTEM_PROMPT and "PERSON" in SYSTEM_PROMPT
+    assert "[slur]" in SYSTEM_PROMPT
+    assert "boundary-setting" in SYSTEM_PROMPT and "nobody likes you" in SYSTEM_PROMPT
+
+
+def test_app_shows_no_safe_rephrasing_card(monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    result = {
+        "text": "some hateful text", "severity": severity.HATE, "triggered": ["identity_hate"],
+        "scores": {"toxic": 0.9}, "secondary_hate": None, "word_importance": None,
+        "llm_called": True, "rephrasing_enabled": True, "warnings": [],
+        "llm": {"explanation": "Targets a group.", "rephrased": "", "intent_note": "i",
+                "confidence_caveat": ""},
+    }
+    monkeypatch.setattr(pipeline, "analyze", lambda **kw: result)
+    at = AppTest.from_file(str(__import__("pathlib").Path(config.__file__).parent / "app.py"),
+                           default_timeout=120).run()
+    at.text_area[0].set_value("some hateful text")
+    at.button[0].click().run()
+    assert not at.exception
+    cards = [w.value for w in at.warning if "No safe rephrasing available" in w.value]
+    assert cards and "Targets a group." in cards[0]  # the explanation is inside the card
+
+
+def test_secondary_toggle_on_by_default_and_passed_to_pipeline(monkeypatch):
+    from streamlit.testing.v1 import AppTest
+
+    seen = {}
+
+    def fake_analyze(**kw):
+        seen.update(kw)
+        return {"text": "x", "severity": severity.NONE, "triggered": [], "scores": {"toxic": 0.0},
+                "secondary_hate": 0.0, "word_importance": None, "llm_called": False,
+                "rephrasing_enabled": False, "llm": None, "warnings": []}
+
+    monkeypatch.setattr(pipeline, "analyze", fake_analyze)
+    at = AppTest.from_file(str(__import__("pathlib").Path(config.__file__).parent / "app.py"),
+                           default_timeout=120).run()
+    assert at.sidebar.toggle[0].value is True
+    assert any("inflated" in c.value for c in at.sidebar.caption)
+    at.text_area[0].set_value("hello")
+    at.button[0].click().run()
+    assert seen["use_secondary"] is True
