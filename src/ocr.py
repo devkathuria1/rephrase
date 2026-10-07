@@ -22,6 +22,11 @@ def _reader(languages: tuple[str, ...]):
     return easyocr.Reader(list(languages), gpu=False, verbose=False)
 
 
+def preload(languages: list[str] | None = None) -> None:
+    """Build the OCR reader now so the first screenshot does not pay the load cost."""
+    _reader(tuple(languages or config.OCR_LANGUAGES))
+
+
 def extract_text(image: ImageInput, languages: list[str] | None = None) -> str:
     """Run OCR on an image and return the recognised text, or "" if none.
 

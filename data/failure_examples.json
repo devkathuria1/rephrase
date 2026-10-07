@@ -1,0 +1,66 @@
+[
+  {
+    "id": 1,
+    "category": "Reclaimed term used within a community",
+    "text": "Me and my girls are queer as hell and we love it.",
+    "expected": "should not flag",
+    "why_it_fails": "Words that were once slurs and have been reclaimed by the group they target look identical to abuse when the model only sees the words and not the speaker. Classifiers learn that identity terms co-occur with toxic text in their training data (a known false-positive pattern), so a proud, affectionate sentence can be scored as toxic. The model has no way to know who is speaking.",
+    "who_is_harmed": "Members of the community using the term: their ordinary self-expression gets flagged or removed, which silences the very people the system claims to protect."
+  },
+  {
+    "id": 2,
+    "category": "Sarcasm",
+    "text": "Wow, you are SO smart. Truly the sharpest mind in the room, genius.",
+    "expected": "should flag",
+    "why_it_fails": "Sarcasm is an insult carried by tone and context, not by vocabulary. Every word here is positive, so a model that scores surface features sees nothing wrong. This is a false negative.",
+    "who_is_harmed": "The target of the sarcasm: contemptuous or belittling messages pass unnoticed, and people who attack others in this style are never prompted to reconsider."
+  },
+  {
+    "id": 3,
+    "category": "Quoted abusive or hateful language in a news or educational sentence",
+    "text": "The article quoted a protester shouting 'People like you are the worst' and condemned it as abusive.",
+    "expected": "should not flag",
+    "why_it_fails": "The model cannot tell that the writer is reporting and condemning abuse rather than committing it. It reacts to the quoted words, so journalism, teaching and counter-speech can be flagged as if they were the abuse itself. This is a false positive.",
+    "who_is_harmed": "Journalists, teachers, researchers and people calling out abuse: their content is flagged or removed, while the abusive content they describe may be easier to find than the criticism of it."
+  },
+  {
+    "id": 4,
+    "category": "Dialect and casual slang (over-flagging risk)",
+    "text": "That new album is straight fire, I'm dead, this shit slaps no cap.",
+    "expected": "should not flag",
+    "why_it_fails": "Informal speech uses profanity and slang as enthusiasm, not hostility. Research on toxicity classifiers (for example Sap et al., 2019 and Davidson et al., 2019) found they over-flag dialects such as African-American English, because informal markers correlate with toxic labels in training data. Here the profanity pushes the toxic and obscene scores very high on an entirely positive message. This is a false positive.",
+    "who_is_harmed": "Speakers of non-standard dialects and young people, whose normal way of talking is penalised more often than formal speech, creating unequal treatment."
+  },
+  {
+    "id": 5,
+    "category": "Code-switching (mixed language)",
+    "text": "Honestly tu ek bekaar aur nikamma insaan hai, nobody likes you yaar.",
+    "expected": "should flag",
+    "why_it_fails": "The classifiers are trained on English. In mixed-language text they cannot read the non-English part, so scores come from the few English words and from unreliable subword guesses. The text is flagged here, but the tier is unreliable: the secondary hate model rates a plain personal insult as hate speech with high confidence, while toxic-bert gives only a moderate toxic score. Different mixes can just as easily be missed or over-escalated.",
+    "who_is_harmed": "Multilingual speakers, whose messages get inconsistent treatment, and targets of abuse written in a language the system does not understand."
+  },
+  {
+    "id": 6,
+    "category": "Implicit hate with no keywords",
+    "text": "Those people are all vermin and should not be allowed in our country.",
+    "expected": "should flag",
+    "why_it_fails": "No slur or profanity appears; the hate lies in dehumanising a group through context. In our own smoke test both toxic-bert and the secondary dynabench model missed this sentence (toxic about 0.23, secondary hate probability near 0.0004). Keyword-driven models are weakest on implicit hate. This is a false negative.",
+    "who_is_harmed": "The targeted group: dehumanising, exclusionary language is the kind that precedes real-world harm, and it passes straight through while crude but harmless text gets flagged."
+  },
+  {
+    "id": 7,
+    "category": "Harmless sentence mentioning an identity term",
+    "text": "I am a proud gay man and I love my family.",
+    "expected": "should not flag",
+    "why_it_fails": "Models trained on toxic data often learn identity words as signals of toxicity (a documented bias, and one HateCheck was designed to expose). This exact sentence passes in our run, but during development a close variant, 'Gay and proud, and I will kill it at the interview tomorrow', was tiered as Hate speech (identity_hate about 0.56), so the risk is real even when a given sentence passes.",
+    "who_is_harmed": "People who mention their own identity: speaking about who they are gets treated as more suspicious than the same sentence without the identity term."
+  },
+  {
+    "id": 8,
+    "category": "Mild rudeness below the threshold",
+    "text": "That was a pretty dumb idea, honestly.",
+    "expected": "should flag",
+    "why_it_fails": "Mild rudeness sits near any decision threshold. This sentence scores about 0.29 on toxic, below our untuned 0.4 'Mildly offensive' cut-off, so it is not flagged, while a slightly different wording (for example 'That is a pretty dumb idea.') scores about 0.52 and is. Small wording changes flip the outcome, and any cut-off is a trade-off between false positives and false negatives. This is a false negative at our threshold.",
+    "who_is_harmed": "Recipients of low-grade, repeated put-downs, which the system treats as acceptable; the threshold effectively decides which small unkindnesses count."
+  }
+]

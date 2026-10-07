@@ -1,6 +1,7 @@
 .env
 .venv/
-data/
+data/*
+!data/failure_examples.json
 models/
 results/
 __pycache__/

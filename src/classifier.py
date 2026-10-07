@@ -21,6 +21,13 @@ def _load(model_name: str):
     return tokenizer, model
 
 
+def preload(use_secondary: bool = False) -> None:
+    """Load the model(s) now so the first request does not pay the load cost."""
+    _load(config.PRIMARY_MODEL)
+    if use_secondary:
+        _load(config.SECONDARY_MODEL)
+
+
 def _logits(model_name: str, texts: list[str]) -> torch.Tensor:
     """Return logits for all texts, processed in batches."""
     tokenizer, model = _load(model_name)
