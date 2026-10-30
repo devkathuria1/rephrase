@@ -36,14 +36,19 @@ def _init_env() -> bool:
     return True
 
 
-def sidebar() -> bool:
-    """Render the sidebar and return whether the secondary classifier is on."""
+def sidebar() -> tuple[bool, bool]:
+    """Render the sidebar and return settings."""
     with st.sidebar:
         st.header("⚙️ Settings")
         use_secondary = st.toggle(
             "Secondary hate-speech classifier",
             value=True,
             help="Adds facebook/roberta-hate-speech-dynabench-r4-target.",
+        )
+        always_rephrase = st.toggle(
+            "Always rephrase (even if harmless)",
+            value=True,
+            help="Calls the LLM to suggest polished phrasing even when no toxicity is flagged.",
         )
         provider, enabled, reason = ui_helpers.provider_status()
         st.markdown(
@@ -70,7 +75,7 @@ def sidebar() -> bool:
                 "your text is sent to a third-party LLM provider, whose own privacy "
                 "policy applies."
             )
-    return use_secondary
+    return use_secondary, always_rephrase
 
 
 def _use_example(text: str) -> None:
@@ -144,7 +149,8 @@ def _result_tab(result: dict) -> None:
             "This is not a guarantee that the text is harmless: the models miss "
             "sarcasm, implicit hate and context. See the Limitations page."
         )
-    elif llm_out:
+
+    if llm_out:
         st.markdown("##### Before / after")
         st.markdown(
             ui_helpers.compare_cards_html(
@@ -155,7 +161,7 @@ def _result_tab(result: dict) -> None:
         left, right = st.columns(2)
         if llm_out["rephrased"]:
             left.markdown(
-                ui_helpers.text_card_html("Why this may be harmful", llm_out["explanation"], "💡"),
+                ui_helpers.text_card_html("Why this may be harmful / Tone Note", llm_out["explanation"], "💡"),
                 unsafe_allow_html=True,
             )
         else:
@@ -175,7 +181,7 @@ def _result_tab(result: dict) -> None:
             "AI-generated suggestions can soften wording while keeping a hurtful "
             "claim, or change your meaning. Check before using."
         )
-    else:
+    elif tier != severity.NONE:
         st.info("No rephrasing is available for this text (see the notes above).", icon="ℹ️")
 
 
@@ -233,7 +239,7 @@ def main() -> None:
     _init_env()
     styles.inject()
     st.markdown(ui_helpers.hero_html(), unsafe_allow_html=True)
-    use_secondary = sidebar()
+    use_secondary, always_rephrase = sidebar()
     load_models(use_secondary)
     text, context = input_section()
     if st.button("Analyze", type="primary", use_container_width=True):
@@ -243,7 +249,7 @@ def main() -> None:
         else:
             with st.spinner("Analysing..."):
                 st.session_state["result"] = pipeline.analyze(
-                    text=text, context=context, use_secondary=use_secondary
+                    text=text, context=context, use_secondary=use_secondary, force_rephrase=always_rephrase
                 )
     if "result" in st.session_state:
         render_result(st.session_state["result"])

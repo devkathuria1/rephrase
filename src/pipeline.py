@@ -32,6 +32,7 @@ def analyze(
     image=None,
     context: str = "",
     use_secondary: bool = False,
+    force_rephrase: bool = False,
 ) -> dict:
     """Analyse text and/or a screenshot for toxicity and suggest a rephrasing.
 
@@ -41,6 +42,7 @@ def analyze(
             and appended to ``text`` if both are given.
         context: Optional extra context passed to the LLM only.
         use_secondary: Also run the secondary hate-speech classifier.
+        force_rephrase: If True, always invokes the LLM to rephrase, even if severity is None.
 
     Returns:
         A dict with ``text``, ``severity``, ``triggered``, ``scores``,
@@ -91,10 +93,12 @@ def analyze(
         result["secondary_hate"] = classifier.score_secondary([combined])[0]
     sev = severity.assess(scores, result["secondary_hate"])
     result["severity"], result["triggered"] = sev.tier, sev.triggered
-    if sev.tier == severity.NONE:
+
+    if sev.tier == severity.NONE and not force_rephrase:
         return result
 
-    result["word_importance"] = explain.explain(combined, scores, sev.triggered[0])
+    top_label = sev.triggered[0] if sev.triggered else max(scores, key=scores.get)
+    result["word_importance"] = explain.explain(combined, scores, top_label)
     if not result["rephrasing_enabled"]:
         warnings.append(f"Rephrasing disabled: {llm.disabled_reason()}")
         return result

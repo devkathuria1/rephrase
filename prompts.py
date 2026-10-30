@@ -30,6 +30,7 @@ a group and cannot be rephrased without keeping the harmful claim, and use \
 may lie behind it, optionally inviting the author to reflect on or reconsider that \
 concern. Never restate the group claim as the author's "view" or "opinion" in a \
 softer form.
+- When force_rephrase or benign text is provided: provide a polite, respectful rewrite or enhanced constructive phrasing in "rephrased".
 - NEVER reproduce a slur or abusive term in any field. Write "[slur]" instead.
 - Be honest about uncertainty. If the text may be sarcasm, a reclaimed term, a \
 quotation, code-switching, or lacks context, say so in confidence_caveat.
@@ -59,8 +60,8 @@ def build_user_message(
     flagged = ", ".join(f"{k}={v:.2f}" for k, v in scores.items() if v >= 0.1) or "none"
     return (
         f"Severity tier: {tier}\n"
-        f"Classifier scores (>=0.10): {flagged}\n"
-        f"Most influential words (automated guess): {', '.join(top_words) or 'n/a'}\n"
-        f"<context>{safe_context or 'none provided'}</context>\n"
-        f"<user_text>{safe_text}</user_text>"
+        f"Toxicity label scores: {flagged}\n"
+        f"Most influential words: {', '.join(top_words) or 'none'}\n"
+        f"Context from the author: {safe_context or 'none provided'}\n\n"
+        f"<user_text>\n{safe_text}\n</user_text>"
     )
